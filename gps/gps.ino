@@ -5,8 +5,13 @@ SoftwareSerial SerialGPS(8, 9);
 TinyGPS GPS;                       
 
 float lat, lon, vel;
-unsigned long data, hora;
+unsigned long date, hour;
 unsigned short sat;
+char ts[32]; // data to be stored
+char data[200];
+char lat_str[12];
+char lon_str[12];
+char speed_str[8];
 
 void setup() {
 
@@ -20,38 +25,24 @@ void loop() {
 
   while (SerialGPS.available()) {
     if (GPS.encode(SerialGPS.read())) {
+      GPS.get_datetime(&date, &hour);
 
-      //Hora e data
-      GPS.get_datetime(&data, &hora);
-      
-      Serial.print("--");
-      Serial.print(hora / 1000000);
-      Serial.print(":");
-      Serial.print((hora % 1000000) / 10000);
-      Serial.print(":");
-      Serial.print((hora % 10000) / 100);
-      Serial.print("--");
+      // Serial.print(date);
+      // Serial.print(", ");
+      // Serial.println(hour);
+      sprintf(ts, "%ld/%ld/%ld %ld:%ld:%ld", date / 10000, (date % 10000) / 100, date % 100, hour / 1000000, (hour % 1000000) / 10000, (hour % 10000) / 100);       
+      //Serial.println(ts);
 
-      Serial.print(data / 10000);
-      Serial.print("/");
-      Serial.print((data % 10000) / 100);
-      Serial.print("/");
-      Serial.print(data % 100);
-      Serial.println("--");
-      
-      //latitude e longitude
       GPS.f_get_position(&lat, &lon);
 
-      Serial.print("Latitude: ");
-      Serial.println(lat, 6);
-      Serial.print("Longitude: ");
-      Serial.println(lon, 6);
-
-      //velocidade
       vel = GPS.f_speed_kmph();
 
-      Serial.print("Velocidade: ");
-      Serial.println(vel);
+      dtostrf(lat, 2, 6, lat_str);
+      dtostrf(lon, 2, 6, lon_str);
+      dtostrf(vel, 3, 2, speed_str);
+      sprintf(data, "{\"ts\": %s, \"lat\": %s, \"lon\": %s, \"speed\": %s}", ts, lat_str, lon_str, speed_str);
+      Serial.println(data);
+            
 
       //Satelites
       sat = GPS.satellites();
