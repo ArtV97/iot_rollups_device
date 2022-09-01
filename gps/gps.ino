@@ -4,7 +4,7 @@
 SoftwareSerial SerialGPS(8, 9);     
 TinyGPS GPS;                       
 
-float lat, lon, vel;
+float lat, lon, speed;
 unsigned long date, hour;
 unsigned short sat;
 char ts[32]; // data to be stored
@@ -35,11 +35,11 @@ void loop() {
 
       GPS.f_get_position(&lat, &lon);
 
-      vel = GPS.f_speed_kmph();
+      speed = GPS.f_speed_kmph();
 
       dtostrf(lat, 2, 6, lat_str);
       dtostrf(lon, 2, 6, lon_str);
-      dtostrf(vel, 3, 2, speed_str);
+      dtostrf(speed, 3, 2, speed_str);
       sprintf(data, "{\"ts\": %s, \"lat\": %s, \"lon\": %s, \"speed\": %s}", ts, lat_str, lon_str, speed_str);
       Serial.println(data);
             
@@ -53,6 +53,7 @@ void loop() {
       }
 
       Serial.println("");
+      delay(60000); // 1 min delay
     }
   }
 }
