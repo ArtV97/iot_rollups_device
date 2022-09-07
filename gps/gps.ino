@@ -2,22 +2,42 @@
 #include<TinyGPS.h>
 #include <SD.h>
 
-// CMD allow monitor serial in linux
+// CMD to allow monitor serial in linux
 // sudo chmod a+rw /dev/ttyACM0
 
 SoftwareSerial SerialGPS(8, 9);
 TinyGPS GPS;
+
+
 File gps_data_file;
+char filename[16];
 
 
-float lat, lon;//, speed;
+float lat, lon;
+char lat_str[10], lon_str[10];
 unsigned long date, hour;
+char d_str[8], h_str[8];
 unsigned short sat;
-char ts[32]; // data to be stored
-char data[200];
-char lat_str[12];
-char lon_str[12];
+char ts[32];
+char data[70]; // data to be stored
 char speed_str[8];
+
+
+void format_datetime() {
+  // day begins with 0
+  if (date < 100000) {
+    sprintf(d_str, "0%ld", date);
+  } else {
+    sprintf(d_str, "%ld", date);
+  }
+
+  // hour begins with 0
+  if (hour < 10000000) {
+    sprintf(h_str, "0%ld", hour);
+  } else {
+    sprintf(h_str, "%ld", hour);
+  }
+}
 
 void setup() {
 
@@ -29,30 +49,8 @@ void setup() {
     Serial.println("initialization failed!");
     while (1);
   }
-
   Serial.println("SD initialization done.");
-  // open the file. note that only one file can be open at a time,
-  // so you have to close this one before opening another.
-//  gps_data_file = SD.open("gps_data.txt", FILE_WRITE);
-
-  // if the file opened okay, write to it:
-//  if (gps_data_file) {
-//    Serial.print("Writing to test.txt...");
-//    gps_data_file.println("This is a test file :)");
-//    gps_data_file.println("testing 1, 2, 3.");
-//    for (int i = 0; i < 20; i++) {
-//      gps_data_file.println(i);
-//    }
-//    // close the file:
-//    gps_data_file.close();
-//    Serial.println("done.");
-//  }
-//  else {
-//    // if the file didn't open, print an error:
-//    Serial.println("error opening test.txt");
-//    while(1);
-//  }
-
+  
   Serial.println("Buscando satelites...");
 }
 
@@ -62,35 +60,41 @@ void loop() {
     if (GPS.encode(SerialGPS.read())) {
       GPS.get_datetime(&date, &hour);
 
-      // Serial.print(date);
-      // Serial.print(", ");
-      // Serial.println(hour);
-      sprintf(ts, "%ld/%ld/%ld %ld:%ld:%ld", date / 10000, (date % 10000) / 100, date % 100, hour / 1000000, (hour % 1000000) / 10000, (hour % 10000) / 100);       
-      //Serial.println(ts);
+      format_datetime();
+      
+      // build ts
+      sprintf(ts, "20%c%c-%c%c-%c%c %c%c:%c%c:%c%c",
+        d_str[4], d_str[5], // year
+        d_str[2], d_str[3], // month
+        d_str[0], d_str[1], // day
+        h_str[0], h_str[1], // hour
+        h_str[2], h_str[3], // minute
+        h_str[4], h_str[5]  // seconds
+      );
 
       GPS.f_get_position(&lat, &lon);
 
-      //speed = GPS.f_speed_kmph();
 
       dtostrf(lat, 2, 6, lat_str);
       dtostrf(lon, 2, 6, lon_str);
       dtostrf(GPS.f_speed_kmph(), 3, 2, speed_str);
+      
+      // buid data
       sprintf(data, "{\"ts\": %s, \"lat\": %s, \"lon\": %s, \"speed\": %s}", ts, lat_str, lon_str, speed_str);
-      //Serial.println(data);
       
       // writing to file
-      gps_data_file = SD.open("gps_data.txt", FILE_WRITE);
+      sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
+
+      gps_data_file = SD.open(filename, FILE_WRITE);
       if (gps_data_file) {
         Serial.print("Writing data to file...");
         gps_data_file.println(data);
         gps_data_file.close();
         Serial.println("Done.");
-      }
-      else {
+      } else {
         Serial.println("error opening data file");
       }
-      
-            
+                  
 
       //Satelites
       sat = GPS.satellites();
