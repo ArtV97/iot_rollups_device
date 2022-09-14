@@ -5,8 +5,13 @@ This repository contains the specifications, code and hardware, used by the devi
 - Arduino Uno
 - [GY-NEO6MV2 GPS Module](#gy-neo6mv2)
 - [Micro SD Card Module](#micro-sd-card-module)
+- [Sim800L GSM Module](#sim800l-gsm-module)
+- 18650 Li-ION Battery - 3.6V 2600mAh
 - Protoboard
 - Jumpers
+
+## External Libraries
+- [TinyGPS](https://www.arduino.cc/reference/en/libraries/tinygps/)
 
 ### GY-NEO6MV2
 At the heart of the module is a GPS chip from U-blox – NEO-6M ([Chip Datasheet](https://content.u-blox.com/sites/default/files/products/documents/NEO-6_DataSheet_%28GPS.G6-HW-09005%29.pdf)). The chip measures less than a postage stamp but packs a surprising amount of features into its tiny frame.
@@ -33,11 +38,11 @@ TXD/RXD Impedance | 510Ω
 **The operating voltage of the NEO-6M chip ranges from 2.7 to 3.6V. But, the module comes with MICREL’s MIC5205 Ultra-Low Dropout 3V3 regulator.
 So we can easily connect it to Arduino or any 5V logic microcontroller without using a logic level converter.**
 
-#### Position Fix Led Indicator
+#### Led Indicator
 There is an LED on the NEO-6M GPS module that indicates the status of the ‘Position Fix’. It will blink at different rates depending on which state it is in:
 
-* No blinking – it is searching for satellites.
-* Blink every 1s – Position Fix is found (the module can see enough satellites).
+* No blinking - it is searching for satellites.
+* Blink every 1s - Position Fix is found (the module can see enough satellites).
 
 #### Pinout
 Pin | Desc
@@ -72,8 +77,40 @@ MISO (Master Out Slave In) | SPI input to the Micro SD Card Module.
 VCC | upplies power for the module and should be connected to 5V pin on the Arduino.
 GND | ground.
 
-## Extra Libraries
-- [TinyGPS](https://www.arduino.cc/reference/en/libraries/tinygps/)
+### Sim800L GSM Module
+The SIM800L GSM/GPRS module is a miniature GSM modem that can be integrated into a large number of IoT projects. This module can accomplish almost anything that a normal cell phone can do such as sending SMS messages, making phone calls, connecting to the Internet via GPRS, and much more.
+
+#### Specs
+Spec | Value
+-----------|-------------
+Operating Voltage | 3.4V to 4.4V (ideally 4.1V)
+Power consumption | <ul><li>sleep mode < 2.0mA</li><li>idle mode < 7.0mA</li><li>GSM transmission (avg): 350 mA</li><li>GSM transmission (peek): 2000mA</li></ul>
+Interface | UART (max. 2.8V) and AT commands
+Supported frequencies | Quad Band (850 / 950 / 1800 /1900 MHz)
+Antenna connector | IPX
+Operating Temperature | -40°C ~ 85°C
+
+#### Led Indicator
+On the top right of the SIM800L module is an LED that indicates the status of your cellular network. It blinks at different rates depending on which state it is in:
+
+* No blinking - module is off.
+* Blink every 1s - is running but the connection to the cellular network has not yet been made.
+* Blink every 2s - GPRS data connection you requested is active.
+* Blink every 3s - it has made contact with the cellular network and can send/receive voice and SMS.
+
+#### Pinout
+Pin | Desc
+-----|------
+NET | is a pin where you can solder the helical antenna provided with the module.
+VCC | supplies power to the module. It can be anywhere from 3.4V to 4.4 volts. Remember that connecting this to the 5V will probably damage your module! It doesn’t even run on 3.3 V! So try using a 3.7V 2A rated external power source like a Li-Po battery or a DC-DC buck converter.
+RST (Reset) | is a hard reset pin. If you got the module in an absolutely bad space, pull this pin LOW for 100ms to perform a hard reset.
+RxD (Receiver) | pin is used to send commands to the module. This pin is auto-baud so the baud rate at which you send the “AT” command after reset is the baud rate used.
+TxD (Transmitter) | pin transmits data from the module to the microcontroller.
+GND | ground.
+RING | pin acts as a Ring Indicator. This is basically the ‘interrupt-out’ pin from the module. It is HIGH by default and pulses LOW for 120ms when a call is received. It can also be configured to pulse when SMS is received.
+DTR | pin activates/deactivates the sleep mode. Pulling it HIGH will put the module into sleep mode, disabling serial communication. Pulling it LOW will wake up the module.
+MIC± | is a differential microphone input. A microphone can be connected directly to these two pins.
+SPK± | is a differential speaker interface. A speaker can be connected directly to these two pins.
 
 ## Wiring Diagram
 ![Wiring](wiring.png)
@@ -95,3 +132,19 @@ MOSI | Pin 11
 MISO | Pin 12
 VCC | 5V
 GND | GND
+
+### Sim800L Module
+Module Pin | Arduino Pin
+-----------|-------------
+RxD | Pin 3
+TxD | Pin 2
+GND | GND
+
+- **VCC: Battery +**
+- **GND: Battery -**
+
+## References
+- https://lastminuteengineers.com/neo6m-gps-arduino-tutorial/
+- https://lastminuteengineers.com/arduino-micro-sd-card-module-tutorial/
+- https://lastminuteengineers.com/sim800l-gsm-module-arduino-tutorial/
+- https://www.elecrow.com/wiki/images/2/20/SIM800_Series_AT_Command_Manual_V1.09.pdf
