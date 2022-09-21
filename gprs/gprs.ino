@@ -2,7 +2,7 @@
 #include<TinyGPS.h>
 #include <SD.h>
 
-#define SEND_AFTER 1 // send data after 10 reads
+#define SEND_AFTER 2 // send data after 10 reads
 
 // CMD to allow monitor serial in linux
 // sudo chmod a+rw /dev/ttyACM0
@@ -43,249 +43,142 @@ void format_datetime(unsigned long date, unsigned long hour, char *d_str, char *
   }
 }
 
+void sim800l_clear() {
+  while (sim800l.available()) { sim800l.read(); }
+}
 
-void fgets_sim800l(char *buff, int buff_sz) {
-  if (sim800l.available()) {
-    int availableBytes = sim800l.available();
+void sim800l_read(char *buffer, int wait_ms) {
+  uint8_t i = 0;
+  unsigned long begin;
+  
+  begin = millis();
 
-    uint8_t line_counter = 0;
-    uint8_t j = 0;
-    for (int i = 0; i < availableBytes-1; i++) {
-      char c = sim800l.read();
-      if (c == '\n' || c == '\r') {
-        line_counter++;
-        continue;
-      }
-      if (line_counter < 2) continue;
-      buff[j] = c;
-      j++;
-      
-      if (j > buff_sz-1) {
-        return;
-      }
+  do {
+    if (sim800l.available()) {
+      buffer[i] = sim800l.read();
+      i++;
     }
-    buff[j] = '\0';
-  }
+  } while (millis() - begin <= wait_ms);
+
+  buffer[i] = '\0';
+  Serial.println(buffer);
+}
+
+
+template <typename type>
+void send_at_cmd(type cmd, char *response, int wait_ms) {
+  sim800l_clear();
+  sim800l.println(cmd);
+  sim800l_read(response, wait_ms);
 }
 
 
 bool sim800l_ready() {
   sim800l.listen();
-  char buff[32];
-  char *p;
+  char response[100]; // AT command response
   
   // AT commands reconized
-  Serial.println("AT");
-  sim800l.println(F("AT"));
-  delay(2000);
-  fgets_sim800l(buff, 32);
-  p = buff;
-  Serial.println(p);
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT"), response, 1500);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // is sim card ok
-  Serial.println("AT+CPIN?");
-  sim800l.println(F("AT+CPIN?"));
-  delay(1500);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+7;
-  if (strcmp(p, "READYOK")) return false; // fail
+  send_at_cmd(F("AT+CPIN?"), response, 1500);
+  if (strstr(response, "READY") == NULL) return false; // fail
 
-  
   // Signal Quality
-  Serial.println("AT+CSQ");
-  sim800l.println(F("AT+CSQ"));
-  delay(2000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+6;
-  if (p[0] == '0') return false; // fail(No signal)
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT+CSQ"), response, 2000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // Display the current network operator currently registered.
-  Serial.println("AT+COPS?");
-  sim800l.println(F("AT+COPS?"));
-  delay(3000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  
-  if (strcmp(buff, "+COPS: 0OK") == 0) return false; // don't have an operator
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
-
-  p = buff+11;
-  Serial.print("Conected to operator: ");
-  do {
-    Serial.print(p[0]);
-    p++;
-  } while (p[0] != '"');
-  Serial.println(p[0]);
-
+  send_at_cmd(F("AT+COPS?"), response, 3000);
+  if (strstr(response, "+COPS: 0\n") != NULL) return false; // fail (no operator)
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   return true;
 }
 
 
-
 bool send_data(char *data) {
-  char buff[32];
-  char *p;
+  char response[100]; // AT command response
 
   // set bearer parameters (Type of Internet connection, "GPRS" or "CSD")
-  Serial.println(F("AT+SAPBR=3,1,\"Contype\",\"GPRS\""));
-  sim800l.println(F("AT+SAPBR=3,1,\"Contype\",\"GPRS\""));
-  delay(5000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
-
+  send_at_cmd(F("AT+SAPBR=3,1,\"Contype\",\"GPRS\""), response, 5000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // set bearer parameters (access point name)
-  Serial.print(F("AT+SAPBR=3,1,\"APN\",\""));
-  Serial.print(apn);
-  Serial.println(F("\""));
   sim800l.print(F("AT+SAPBR=3,1,\"APN\",\""));
   sim800l.print(apn);
-  sim800l.println(F("\""));
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("\""), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // open bearer
-  Serial.println(F("AT+SAPBR=1,1"));
-  sim800l.println(F("AT+SAPBR=1,1"));
-  delay(15000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) {
+  send_at_cmd(F("AT+SAPBR=1,1"), response, 15000);
+  if (strstr(response, "OK") == NULL) {
     // close bearer
-    Serial.println(F("AT+SAPBR=0,1"));
-    sim800l.println(F("AT+SAPBR=0,1"));
-    delay(10000);
-    fgets_sim800l(buff, 32);
-    Serial.println(buff);
+    send_at_cmd(F("AT+SAPBR=0,1"), response, 10000);
 
     // try again
-    Serial.println(F("AGAIN: AT+SAPBR=1,1"));
-    sim800l.println(F("AT+SAPBR=1,1"));
-    delay(10000);
-    fgets_sim800l(buff, 32);
-    Serial.println(buff);
-    p = buff+strlen(buff)-2;
-    if (strcmp(p, "OK")) return false; // fail
+    send_at_cmd(F("AT+SAPBR=1,1"), response, 15000);
+    if (strstr(response, "OK") == NULL) return false; // fail
   }
 
   // query bearer
-  Serial.println(F("AT+SAPBR=2,1"));
-  sim800l.println(F("AT+SAPBR=2,1"));
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT+SAPBR=2,1"), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // Initialize HTTP service
-  Serial.println(F("AT+HTTPINIT"));
-  sim800l.println(F("AT+HTTPINIT"));
-  delay(5000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
-  
+  send_at_cmd(F("AT+HTTPINIT"), response, 5000);
+  //if (strstr(response, "OK") == NULL) return false; // fail
+  if (strstr(response, "OK") == NULL) {
+    // terminate
+    send_at_cmd(F("AT+HTTPTERM"), response, 3000);
+
+    // try again
+    send_at_cmd(F("AT+HTTPINIT"), response, 5000);
+    if (strstr(response, "OK") == NULL) return false; // fail
+  }
+
   // Set HTTP parameters value (Bearer profile identifier) * Mandatory parameter
-  Serial.println(F("AT+HTTPPARA=\"CID\",1"));
-  sim800l.println(F("AT+HTTPPARA=\"CID\",1"));
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT+HTTPPARA=\"CID\",1"), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // Server address
-  Serial.print(F("AT+HTTPPARA=\"URL\",\"http://"));
-  Serial.print(url);
-  Serial.print(F(":"));
-  Serial.print(port);
-  Serial.println(F("\""));
   sim800l.print(F("AT+HTTPPARA=\"URL\",\"http://"));
   sim800l.print(url);
   sim800l.print(F(":"));
   sim800l.print(port);
-  sim800l.println(F("\""));
-  delay(4000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("\""), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // Set the “Content-Type” field in HTTP header
-  Serial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
-  sim800l.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
-  delay(4000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""), response, 4000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
-  
   // Input HTTP data (Sending data size and time limit(ms))
-  Serial.print(F("AT+HTTPDATA="));
-  Serial.print(strlen(data));
-  Serial.println(",100000");
   sim800l.print(F("AT+HTTPDATA="));
   sim800l.print(strlen(data));
-  sim800l.println(",100000");
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  
+  send_at_cmd(F(",100000"), response, 6000);
+  if (strstr(response, "DOWNLOAD") == NULL) return false; // fail
 
   // Sending data
-  sim800l.println(data);
-  Serial.print("Sending -> ");
-  Serial.println(data);
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
+  sim800l.print(data);
+  send_at_cmd(F(""), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
 
   // HTTP method action (0 = GET, 1 = POST)
-  Serial.println(F("AT+HTTPACTION=1"));
-  sim800l.println(F("AT+HTTPACTION=1"));
-  delay(6000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  //if (strcmp(p, "OK")) return false; // fail
-
+  bool post_success = true;
+  send_at_cmd(F("AT+HTTPACTION=1"), response, 6000);
+  if (strstr(response, "OK") == NULL) return false; // fail
+  if (strstr(response, "1,200") == NULL) post_success = false;
 
   // Terminate HTTP service
-  Serial.println(F("AT+HTTPTERM"));
-  sim800l.println(F("AT+HTTPTERM"));
-  delay(3000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  //if (strcmp(p, "OK")) return false; // fail
+  send_at_cmd(F("AT+HTTPTERM"), response, 3000);
+  //if (strstr(response, "OK") == NULL) return false; // fail
 
-  Serial.println(F("AT+CIPSHUT"));
-  sim800l.println(F("AT+CIPSHUT"));
-  delay(1000);
-  fgets_sim800l(buff, 32);
-  Serial.println(buff);
-  p = buff+strlen(buff)-2;
-  if (strcmp(p, "OK")) return false; // fail
-  
-  return 0;
+  send_at_cmd(F("AT+CIPSHUT"), response, 2000);
+  //if (strstr(response, "OK") == NULL) return false; // fail
+
+  return post_success;
 }
 
 
@@ -430,8 +323,9 @@ void loop() {
         }
         
         data_count = 0; // reset
+      } else {
+        delay(9000); // aprox 10 sec for each gps reading
       }
-      delay(9000); // aprox 10 sec for each gps reading
     }
   }
 }
