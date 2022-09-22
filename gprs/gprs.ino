@@ -3,6 +3,7 @@
 #include <SD.h>
 
 #define SEND_AFTER 2 // send data after 10 reads
+#define DATA_SZ 100
 
 // CMD to allow monitor serial in linux
 // sudo chmod a+rw /dev/ttyACM0
@@ -24,7 +25,7 @@ char port[6] = "";
 TinyGPS GPS;
 
 char bus_line[12] = "";
-char data[100]; // data to be stored
+char data[DATA_SZ+1]; // data to be stored
 
 
 void format_datetime(unsigned long date, unsigned long hour, char *d_str, char *h_str) {
@@ -98,7 +99,10 @@ bool sim800l_ready() {
 }
 
 
-bool send_data(char *data) {
+// send file "filename" via HTTP POST
+bool send_from_file(File data_file) {
+  if (!data_file.available()) return false;
+
   char response[100]; // AT command response
 
   // set bearer parameters (Type of Internet connection, "GPRS" or "CSD")
@@ -154,16 +158,43 @@ bool send_data(char *data) {
   send_at_cmd(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""), response, 4000);
   if (strstr(response, "OK") == NULL) return false; // fail
 
+
+  //gps_data_file = SD.open(filename, FILE_READ);
+  //if (!gps_data_file || !gps_data_file.available()) return false;
+
+
   // Input HTTP data (Sending data size and time limit(ms))
   sim800l.print(F("AT+HTTPDATA="));
-  sim800l.print(strlen(data));
+  sim800l.print(data_file.available()); // number of bytes to read from file
   send_at_cmd(F(",100000"), response, 6000);
   if (strstr(response, "DOWNLOAD") == NULL) return false; // fail
 
   // Sending data
-  sim800l.print(data);
-  send_at_cmd(F(""), response, 6000);
+  while (data_file.available()) {
+    uint8_t i = 0;
+    memset(data, '\0', DATA_SZ); // reset string
+    char c;
+    do {
+      data[i] = data_file.read();
+      i++;
+      c = data_file.peek();
+    } while (c != '\n' && c != '\r');
+
+
+    do {
+      data_file.read();
+      c = data_file.peek();
+    } while (c == '\n' || c == '\r');
+
+    Serial.print(F("Sending-> "));
+    Serial.print(data);
+    sim800l.println(data);
+    Serial.print(F(" | Remaining Bytes: "));
+    Serial.println(data_file.available());
+  }
+  sim800l_read(response, 10000);
   if (strstr(response, "OK") == NULL) return false; // fail
+  //gps_data_file.close();
 
   // HTTP method action (0 = GET, 1 = POST)
   bool post_success = true;
@@ -304,19 +335,18 @@ void loop() {
         Serial.println(F("Error opening data file"));
       }
 
-
-      //Satelites
-//      sat = GPS.satellites();
-//
-//      if (sat != TinyGPS::GPS_INVALID_SATELLITES) {
-//        Serial.print("Satelites: ");
-//        Serial.println(sat);
-//      }
-
-      
       if (data_count == SEND_AFTER) {
         if (sim800l_ready()) {
-          send_data(data);
+          //send_from_file(filename);
+          
+          gps_data_file = SD.open(filename, FILE_READ);
+          if (gps_data_file) {
+            bool success = send_from_file(gps_data_file);
+            gps_data_file.close();
+          }
+
+          //   if (success) SD.remove(filename);            
+          // }
         }
         else {
           Serial.println(F("Fail to send via GPRS"));
