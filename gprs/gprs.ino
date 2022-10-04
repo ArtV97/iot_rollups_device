@@ -2,7 +2,7 @@
 #include<TinyGPS.h>
 #include <SD.h>
 
-#define SEND_AFTER 2 // send data after 10 reads
+#define SEND_AFTER 5 // send data after 10 reads
 #define DATA_SZ 100
 
 // CMD to allow monitor serial in linux
@@ -224,9 +224,14 @@ void setup() {
     while (1);
   }
 
+  if (!SD.exists(F("conf.txt"))) {    
+    Serial.println(F("conf.txt doesn't exists!"));
+    while (1);
+  }
+
   File conf_file = SD.open(F("conf.txt"), FILE_READ);
   if (!conf_file) {
-    Serial.println(F("Failed to open conf.txt file"));
+    Serial.println(F("Failed to open conf.txt file!"));
     while (1);
   }
 
@@ -324,10 +329,26 @@ void loop() {
       // writing to file
       sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
 
-      gps_data_file = SD.open(filename, FILE_WRITE);
+      uint8_t file_exists = SD.exists(filename);
+
+      gps_data_file = SD.open(filename, O_WRITE | O_CREAT);
       if (gps_data_file) {
         Serial.print(F("Writing data to file..."));
-        gps_data_file.println(data);
+        if (file_exists) {
+          unsigned long f_size = gps_data_file.size();
+          if (!gps_data_file.seek(f_size-2)) {
+            gps_data_file.close();
+            break;
+          };
+
+          gps_data_file.println(F(","));
+          gps_data_file.print(data);
+        } else {
+          gps_data_file.println(F("{\"data\":["));
+          gps_data_file.print(data);
+        }
+        gps_data_file.print(F("]}"));
+        
         gps_data_file.close();
         Serial.println(F("Done."));
         data_count++;
@@ -337,21 +358,18 @@ void loop() {
 
       if (data_count == SEND_AFTER) {
         if (sim800l_ready()) {
-          //send_from_file(filename);
-          
           gps_data_file = SD.open(filename, FILE_READ);
           if (gps_data_file) {
             bool success = send_from_file(gps_data_file);
             gps_data_file.close();
+            if (success) SD.remove(filename);
           }
 
-          //   if (success) SD.remove(filename);            
-          // }
         }
         else {
           Serial.println(F("Fail to send via GPRS"));
         }
-        
+
         data_count = 0; // reset
       } else {
         delay(9000); // aprox 10 sec for each gps reading
