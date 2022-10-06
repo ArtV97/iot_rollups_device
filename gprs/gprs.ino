@@ -1,6 +1,8 @@
-#include<SoftwareSerial.h>
-#include<TinyGPS.h>
+#include <SoftwareSerial.h>
 #include <SD.h>
+
+// external libraries
+#include <TinyGPS.h>
 
 #define SEND_AFTER 5 // send data after 10 reads
 #define DATA_SZ 100
