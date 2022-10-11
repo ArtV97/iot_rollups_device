@@ -46,6 +46,16 @@ void format_datetime(unsigned long date, unsigned long hour, char *d_str, char *
   }
 }
 
+
+void rm_f_zeros(char *s) {
+  uint8_t i = strlen(s)-1;
+
+  while (i > 2 && s[i] == '0') {
+    s[i] = '\0';
+    i--;
+  }
+}
+
 void sim800l_clear() {
   while (sim800l.available()) { sim800l.read(); }
 }
@@ -323,13 +333,18 @@ void loop() {
       dtostrf(lat, 2, 6, lat_str);
       dtostrf(lon, 2, 6, lon_str);
       dtostrf(GPS.f_speed_kmph(), 3, 2, speed_str);
+
+      rm_f_zeros(lat_str);
+      rm_f_zeros(lon_str);
+      rm_f_zeros(speed_str);
       
       // buid data
       sprintf(data, "{\"bus_line\": \"%s\",\"ts\": \"%s\",\"lat\": %s,\"lon\": %s,\"speed\": %s}", bus_line, ts, lat_str, lon_str, speed_str);
       Serial.println(data);
       
       // writing to file
-      sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
+      //sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
+      sprintf(filename, "%s.txt", "data");
 
       uint8_t file_exists = SD.exists(filename);
 
@@ -346,7 +361,8 @@ void loop() {
           gps_data_file.println(F(","));
           gps_data_file.print(data);
         } else {
-          gps_data_file.println(F("{\"data\":["));
+          gps_data_file.println(F("{\"data\":"));
+          gps_data_file.print(F("["));
           gps_data_file.print(data);
         }
         gps_data_file.print(F("]}"));

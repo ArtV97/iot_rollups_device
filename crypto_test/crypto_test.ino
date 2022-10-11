@@ -31,25 +31,32 @@ void build_sha256(byte hash_value[HASH_SIZE]) {
     char data[DATA_SZ+1]; // data to be stored
     SHA256 sha256;
     sha256.reset(); // clear previous hash information
-    File gps_data_file = SD.open("04102215.txt", FILE_READ);
+    File gps_data_file = SD.open("data.txt", FILE_READ);
     int line_counter = 0;
     int total_bytes = 0;
-    if (gps_data_file) {
+    if (gps_data_file && gps_data_file.available()) {
+        // consume '{"data":\n\r'
+        for (uint8_t j = 0; j < 10; j++) gps_data_file.read();
+
+        char c;
         while (gps_data_file.available()) {
             uint8_t i = 0;
 
-            char c;
             do {
                 data[i] = gps_data_file.read();
                 i++;
                 c = gps_data_file.peek();
             } while (gps_data_file.available() && c != '\n' && c != '\r');
-            data[i] = '\0';
+
+            if (i > 2 && data[i-2] == ']') data[i-1] = '\0'; // data end
+            else data[i] = '\0';
+
             line_counter++;
 
             Serial.println(data);
             sha256.update(data, strlen(data));
 
+            // consume \n and \r
             do {
                 gps_data_file.read();
                 c = gps_data_file.peek();
@@ -58,16 +65,6 @@ void build_sha256(byte hash_value[HASH_SIZE]) {
     gps_data_file.close();
 
     sha256.finalize(hash_value, HASH_SIZE);
-    // Serial.print("Hash: ");
-    // for (int i = 0; i < HASH_SIZE; i++) {
-    //     if (hash_value[i] < 16) {
-    //         Serial.print(F("0"));
-    //     }
-    //     Serial.print(hash_value[i], HEX);
-    // }
-    // Serial.println();
-
-    // sign_message(hash_value);
     } else {
         Serial.println(F("Couldn't open file."));
     }
@@ -75,15 +72,6 @@ void build_sha256(byte hash_value[HASH_SIZE]) {
 
 
 void sign_message(byte *msg) {
-    Serial.print("Hash2: ");
-    for (int i = 0; i < HASH_SIZE; i++) {
-        if (msg[i] < 16) {
-            Serial.print(F("0"));
-        }
-        Serial.print(msg[i], HEX);
-    }
-    Serial.println("\n\n");
-    delay(200);
     byte signature[64];
     Ed25519::sign(signature, privateKey, publicKey, msg, HASH_SIZE);
     Serial.print("Signed Hash: ");
@@ -94,12 +82,6 @@ void sign_message(byte *msg) {
         Serial.print(signature[i], HEX);
     }
     Serial.println();
-
-    // if (!Ed25519::verify(signature, publicKey, msg, HASH_SIZE)) {
-    //     Serial.println("Invalid Signature!");
-    // } else {
-    //     Serial.println("Valid Signature!");
-    // }
 }
 
 
