@@ -2,7 +2,7 @@
 This repository contains the specifications, code and hardware, used by the devices in the DApp developed using the Cartesi Rollups. The DApp repository can be accessed using this [link](https://github.com/ArtV97/iot_rollups_dapp).
 
 ## Hardware
-- Arduino Uno
+- Arduino Mega
 - [GY-NEO6MV2 GPS Module](#gy-neo6mv2)
 - [Micro SD Card Module](#micro-sd-card-module)
 - [Sim800L GSM Module](#sim800l-gsm-module)
@@ -119,25 +119,25 @@ SPK± | is a differential speaker interface. A speaker can be connected directly
 Module Pin | Arduino Pin
 -----------|-------------
 VCC | 5V
-RX | Pin 9
-TX | Pin 8
+RX | Pin 17
+TX | Pin 16
 GND | GND
 
 ### MicroSD Module
 Module Pin | Arduino Pin
 -----------|-------------
-CS | Pin 10
-SCK | Pin 13
-MOSI | Pin 11
-MISO | Pin 12
+CS | Pin 53
+SCK | Pin 52
+MOSI | Pin 51
+MISO | Pin 50
 VCC | 5V
 GND | GND
 
 ### Sim800L Module
 Module Pin | Arduino Pin
 -----------|-------------
-RxD | Pin 3
-TxD | Pin 2
+RxD | Pin 19
+TxD | Pin 18
 GND | GND
 
 - **VCC: Battery +**
@@ -148,3 +148,5 @@ GND | GND
 - https://lastminuteengineers.com/arduino-micro-sd-card-module-tutorial/
 - https://lastminuteengineers.com/sim800l-gsm-module-arduino-tutorial/
 - https://www.elecrow.com/wiki/images/2/20/SIM800_Series_AT_Command_Manual_V1.09.pdf
+- https://www.ourpcb.com/microsd-pinout.html
+- https://www.arduino.cc/reference/en/language/functions/communication/serial/

@@ -1,17 +1,15 @@
-#include <SoftwareSerial.h>
 #include <SD.h>
 
 // external libraries
 #include <TinyGPS.h>
 
 #define SEND_AFTER 5 // send data after 10 reads
-#define DATA_SZ 100
+#define DATA_SZ 120
+#define sim800l Serial1
+#define SerialGPS Serial2
 
 // CMD to allow monitor serial in linux
 // sudo chmod a+rw /dev/ttyACM0
-
-SoftwareSerial sim800l(2,3); // (TX,RX)
-SoftwareSerial SerialGPS(8,9);  // (TX,RX)
 
 // File variables
 File gps_data_file;
@@ -26,7 +24,8 @@ char port[6] = "";
 // GPS Processing variables
 TinyGPS GPS;
 
-char bus_line[12] = "";
+char bus_id[12] = "";
+uint8_t trip_id = 1;
 char data[DATA_SZ+1]; // data to be stored
 
 
@@ -87,7 +86,6 @@ void send_at_cmd(type cmd, char *response, int wait_ms) {
 
 
 bool sim800l_ready() {
-  sim800l.listen();
   char response[100]; // AT command response
   
   // AT commands reconized
@@ -231,7 +229,7 @@ void setup() {
   SerialGPS.begin(9600);
   Serial.begin(9600);
 
-  if (!SD.begin(10)) {
+  if (!SD.begin(53)) {
     Serial.println(F("SD card initialization failed!"));
     while (1);
   }
@@ -277,8 +275,8 @@ void setup() {
     } while (value[i] != '\n' && len > 0);
     value[i] = '\0';
 
-    if (strcmp(field, "bus_line") == 0) {
-      strcpy(bus_line, value);
+    if (strcmp(field, "bus_id") == 0) {
+      strcpy(bus_id, value);
     } else if (strcmp(field, "apn") == 0) {
       strcpy(apn, value);
     } else if (strcmp(field, "url") == 0) {
@@ -292,7 +290,7 @@ void setup() {
 
   conf_file.close();
 
-  if (!strcmp(bus_line,"") && !strcmp(apn,"") && !strcmp(url,"") && !strcmp(port,"")) {
+  if (!strcmp(bus_id,"") || !strcmp(apn,"") || !strcmp(url,"") || !strcmp(port,"")) {
     Serial.println(F("Missing values in conf.txt file."));
     while (1);
   }
@@ -302,8 +300,6 @@ void setup() {
 
 
 void loop() {
-  SerialGPS.listen();
-
   while (SerialGPS.available()) {
     if (GPS.encode(SerialGPS.read())) {
       float lat, lon;
@@ -339,7 +335,10 @@ void loop() {
       rm_f_zeros(speed_str);
       
       // buid data
-      sprintf(data, "{\"bus_line\": \"%s\",\"ts\": \"%s\",\"lat\": %s,\"lon\": %s,\"speed\": %s}", bus_line, ts, lat_str, lon_str, speed_str);
+      sprintf(data,
+        "{\"bus_id\":\"%s\",\"trip_id\":\"%s;%d\",\"ts\":\"%s\",\"lat\":%s,\"lon\":%s,\"speed\":%s}",
+        bus_id, bus_id, trip_id,ts, lat_str, lon_str, speed_str
+      );
       Serial.println(data);
       
       // writing to file
