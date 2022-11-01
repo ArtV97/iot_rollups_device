@@ -2,14 +2,27 @@
 
 // external libraries
 #include <TinyGPS.h>
+#include <Crypto.h>
+#include <SHA256.h>     // cryptographic hash function
+#include <Ed25519.h>    // asymetric cryptograph
+
 
 #define SEND_AFTER 5 // send data after 10 reads
-#define DATA_SZ 120
+#define DATA_SZ 128
+#define KEY_SZ 32
+#define HASH_SZ 32
+#define SIGNATURE_SZ 64
+#define CONF_FILE_FIELD_SZ 16
+#define CONF_FILE_VALUE_SZ 128
 #define sim800l Serial1
 #define SerialGPS Serial2
 
 // CMD to allow monitor serial in linux
 // sudo chmod a+rw /dev/ttyACM0
+
+// cryptographic variables
+uint8_t public_key[KEY_SZ];
+uint8_t private_key[KEY_SZ];
 
 // File variables
 File gps_data_file;
@@ -27,6 +40,62 @@ TinyGPS GPS;
 char bus_id[12] = "";
 uint8_t trip_id = 1;
 char data[DATA_SZ+1]; // data to be stored
+
+
+////////////////////////////////////
+/////     Utility FUNCTIONS    /////
+////////////////////////////////////
+
+void hex2bytes(byte *byteArray, const char *hexString) {
+    bool oddLength = strlen(hexString) & 1;
+
+    byte currentByte = 0;
+    byte byteIndex = 0;
+
+    for (byte charIndex = 0; charIndex < strlen(hexString); charIndex++) {
+        bool oddCharIndex = charIndex & 1;
+
+        if (oddLength) {
+            // If the length is odd
+            if (oddCharIndex)
+            {
+            // odd characters go in high nibble
+            currentByte = nibble(hexString[charIndex]) << 4;
+            }
+            else
+            {
+            // Even characters go into low nibble
+            currentByte |= nibble(hexString[charIndex]);
+            byteArray[byteIndex++] = currentByte;
+            currentByte = 0;
+            }
+        } else {
+            // If the length is even
+            if (!oddCharIndex) {
+                // Odd characters go into the high nibble
+                currentByte = nibble(hexString[charIndex]) << 4;
+            } else {
+                // Odd characters go into low nibble
+                currentByte |= nibble(hexString[charIndex]);
+                byteArray[byteIndex++] = currentByte;
+                currentByte = 0;
+            }
+        }
+    }
+}
+
+byte nibble(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+
+    return 0;  // Not a valid hexadecimal character
+}
 
 
 void format_datetime(unsigned long date, unsigned long hour, char *d_str, char *h_str) {
@@ -55,9 +124,15 @@ void rm_f_zeros(char *s) {
   }
 }
 
+
+////////////////////////////////////
+/////     SIM800L FUNCTIONS    /////
+////////////////////////////////////
+
 void sim800l_clear() {
   while (sim800l.available()) { sim800l.read(); }
 }
+
 
 void sim800l_read(char *buffer, int wait_ms) {
   uint8_t i = 0;
@@ -108,6 +183,97 @@ bool sim800l_ready() {
   return true;
 }
 
+
+bool send_data(File data_file) {
+  // open JSON object (with "data" key) to be sent
+  sim800l.println(F("{{\"data\":"));
+
+  SHA256 sha256;
+  sha256.reset(); // clear previous hash information
+
+  // open data array
+  char c;
+  Serial.print("[");
+  sha256.update("[", 1);
+
+  while (gps_data_file.available()) {
+    uint8_t i = 0;
+
+    do {
+      data[i] = gps_data_file.read();
+      i++;
+      c = gps_data_file.peek();
+    } while (gps_data_file.available() && c != '\n' && c != '\r');
+    data[i] = '\0';
+
+    Serial.print(data);
+    // calculating sha256 hash
+    sha256.update(data, strlen(data));
+
+    // consume \n and \r
+    do {
+      gps_data_file.read();
+      c = gps_data_file.peek();
+    } while (gps_data_file.available() && (c == '\n' || c == '\r'));
+
+    // add "," if still has data to send
+    if (gps_data_file.available()) {
+      Serial.println(",");
+      sha256.update(",", 1);
+    }
+  }
+
+  // close data array
+  Serial.print("]");
+  sha256.update("]", 1);
+
+  // finalize sha256 hash calculation
+  byte hash_value[HASH_SZ];
+  sha256.finalize(hash_value, HASH_SZ);
+  
+  // send sha256 hash value
+  sim800l.println(F(","));
+  sim800l.print(F("\"sha256\":"));
+  for (int i = 0; i < HASH_SZ; i++) {
+    if (hash_value[i] < 16) {
+      sim800l.print(F("0"));
+    }
+    sim800l.print(hash_value[i], HEX);
+  }
+
+  // get Ed25519 signature
+  byte signature[SIGNATURE_SZ];
+  Ed25519::sign(signature, private_key, public_key, hash_value, HASH_SZ);
+
+  // send Ed25519 signature
+  sim800l.println(F(","));
+  sim800l.print(F("\"Ed25519\":"));
+  for (int i = 0; i < SIGNATURE_SZ; i++) {
+    if (signature[i] < 16) {
+      sim800l.print(F("0"));
+    }
+    sim800l.print(signature[i], HEX);
+  }
+
+  // send public key
+  sim800l.println(F(","));
+  sim800l.print(F("\"public_key\":"));
+  for (int i = 0; i < KEY_SZ; i++) {
+    if (public_key[i] < 16) {
+      sim800l.print(F("0"));
+    }
+    sim800l.print(public_key[i], HEX);
+  }
+
+  // close JSON object to be sent
+  sim800l.println(F("}"));
+
+  char response[100]; // AT command response
+  sim800l_read(response, 10000);
+  if (strstr(response, "OK") == NULL) return false; // fail
+
+  return true;
+}
 
 // send file "filename" via HTTP POST
 bool send_from_file(File data_file) {
@@ -179,31 +345,9 @@ bool send_from_file(File data_file) {
   send_at_cmd(F(",100000"), response, 6000);
   if (strstr(response, "DOWNLOAD") == NULL) return false; // fail
 
-  // Sending data
-  while (data_file.available()) {
-    uint8_t i = 0;
-    memset(data, '\0', DATA_SZ); // reset string
-    char c;
-    do {
-      data[i] = data_file.read();
-      i++;
-      c = data_file.peek();
-    } while (c != '\n' && c != '\r');
-
-
-    do {
-      data_file.read();
-      c = data_file.peek();
-    } while (c == '\n' || c == '\r');
-
-    Serial.print(F("Sending-> "));
-    Serial.print(data);
-    sim800l.println(data);
-    Serial.print(F(" | Remaining Bytes: "));
-    Serial.println(data_file.available());
-  }
-  sim800l_read(response, 10000);
-  if (strstr(response, "OK") == NULL) return false; // fail
+  // sending data
+  if (!send_data(gps_data_file)) return false; // fail to send data
+  
   //gps_data_file.close();
 
   // HTTP method action (0 = GET, 1 = POST)
@@ -224,7 +368,6 @@ bool send_from_file(File data_file) {
 
 
 void setup() {
-
   sim800l.begin(9600);
   SerialGPS.begin(9600);
   Serial.begin(9600);
@@ -245,8 +388,8 @@ void setup() {
     while (1);
   }
 
-  char field[10];
-  char value[25];
+  char field[CONF_FILE_FIELD_SZ+1];
+  char value[CONF_FILE_VALUE_SZ+1];
   int len = conf_file.available();
   uint8_t i;
   while (len) {
@@ -283,8 +426,14 @@ void setup() {
       strcpy(url, value);
     } else if (strcmp(field, "port") == 0) {
       strcpy(port, value);
+    } else if (strcmp(field, "public_key") == 0) {
+      hex2bytes(public_key, value);
+    } else if (strcmp(field, "private_key") == 0) {
+      hex2bytes(private_key, value);
     } else {
-      Serial.println(field);
+      Serial.print(F("Unkown field: \""));
+      Serial.print(field);
+      Serial.println(F("\""));
     }
   }
 
@@ -345,26 +494,13 @@ void loop() {
       //sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
       sprintf(filename, "%s.txt", "data");
 
-      uint8_t file_exists = SD.exists(filename);
+      //uint8_t file_exists = SD.exists(filename);
 
-      gps_data_file = SD.open(filename, O_WRITE | O_CREAT);
+      //gps_data_file = SD.open(filename, O_WRITE | O_CREAT);
+      gps_data_file = SD.open(filename, FILE_WRITE);
       if (gps_data_file) {
         Serial.print(F("Writing data to file..."));
-        if (file_exists) {
-          unsigned long f_size = gps_data_file.size();
-          if (!gps_data_file.seek(f_size-2)) {
-            gps_data_file.close();
-            break;
-          };
-
-          gps_data_file.println(F(","));
-          gps_data_file.print(data);
-        } else {
-          gps_data_file.println(F("{\"data\":"));
-          gps_data_file.print(F("["));
-          gps_data_file.print(data);
-        }
-        gps_data_file.print(F("]}"));
+        gps_data_file.println(data);
         
         gps_data_file.close();
         Serial.println(F("Done."));
