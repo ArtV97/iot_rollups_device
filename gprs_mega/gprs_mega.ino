@@ -177,7 +177,7 @@ bool sim800l_ready() {
 
   // Display the current network operator currently registered.
   send_at_cmd(F("AT+COPS?"), response, 3000);
-  if (strstr(response, "+COPS: 0\n") != NULL) return false; // fail (no operator)
+  if (strstr(response, "+COPS: 0\r\n") != NULL) return false; // fail (no operator)
   if (strstr(response, "OK") == NULL) return false; // fail
 
   return true;
@@ -186,7 +186,8 @@ bool sim800l_ready() {
 
 bool send_data(File data_file) {
   // open JSON object (with "data" key) to be sent
-  sim800l.println(F("{{\"data\":"));
+  //sim800l.println(F("{{\"data\":"));
+  sim800l.print(F("{{\"data\":"));
 
   SHA256 sha256;
   sha256.reset(); // clear previous hash information
@@ -194,6 +195,8 @@ bool send_data(File data_file) {
   // open data array
   char c;
   Serial.print("[");
+  sim800l.print(F("["));
+  // calculating data SHA-256 hash
   sha256.update("[", 1);
 
   while (gps_data_file.available()) {
@@ -206,8 +209,9 @@ bool send_data(File data_file) {
     } while (gps_data_file.available() && c != '\n' && c != '\r');
     data[i] = '\0';
 
-    Serial.print(data);
-    // calculating sha256 hash
+    Serial.println(data);
+    sim800l.println(data);
+    // calculating data SHA-256 hash
     sha256.update(data, strlen(data));
 
     // consume \n and \r
@@ -217,22 +221,24 @@ bool send_data(File data_file) {
     } while (gps_data_file.available() && (c == '\n' || c == '\r'));
 
     // add "," if still has data to send
-    if (gps_data_file.available()) {
-      Serial.println(",");
-      sha256.update(",", 1);
-    }
+    // if (gps_data_file.available()) {
+    //   Serial.println(",");
+    //   sha256.update(",", 1);
+    // }
   }
 
   // close data array
   Serial.print("]");
+  sim800l.print(F("]"));
+  // calculating data SHA-256 hash
   sha256.update("]", 1);
 
-  // finalize sha256 hash calculation
+  // finalize SHA-256 hash calculation
   byte hash_value[HASH_SZ];
   sha256.finalize(hash_value, HASH_SZ);
   
   // send sha256 hash value
-  sim800l.println(F(","));
+  sim800l.print(F(","));
   sim800l.print(F("\"sha256\":"));
   for (int i = 0; i < HASH_SZ; i++) {
     if (hash_value[i] < 16) {
@@ -246,7 +252,7 @@ bool send_data(File data_file) {
   Ed25519::sign(signature, private_key, public_key, hash_value, HASH_SZ);
 
   // send Ed25519 signature
-  sim800l.println(F(","));
+  sim800l.print(F(","));
   sim800l.print(F("\"Ed25519\":"));
   for (int i = 0; i < SIGNATURE_SZ; i++) {
     if (signature[i] < 16) {
@@ -256,7 +262,7 @@ bool send_data(File data_file) {
   }
 
   // send public key
-  sim800l.println(F(","));
+  sim800l.print(F(","));
   sim800l.print(F("\"public_key\":"));
   for (int i = 0; i < KEY_SZ; i++) {
     if (public_key[i] < 16) {
@@ -266,7 +272,7 @@ bool send_data(File data_file) {
   }
 
   // close JSON object to be sent
-  sim800l.println(F("}"));
+  sim800l.print(F("}"));
 
   char response[100]; // AT command response
   sim800l_read(response, 10000);
@@ -341,7 +347,17 @@ bool send_from_file(File data_file) {
 
   // Input HTTP data (Sending data size and time limit(ms))
   sim800l.print(F("AT+HTTPDATA="));
-  sim800l.print(data_file.available()); // number of bytes to read from file
+  // calculating data (JSON) length
+  int data_length = strlen("{{\"data\":");
+  data_length++; // "["
+  data_length = data_length + data_file.available();
+  data_length++; // "]"
+  data_length = data_length + strlen(",\"sha256\":") + HASH_SZ;
+  data_length = data_length + strlen(",\"Ed25519\":") + SIGNATURE_SZ;
+  data_length = data_length + strlen(",\"public_key\":") + KEY_SZ;
+  data_length++; // "}"
+  sim800l.print(data_length); // bytes to be sent
+  //sim800l.print(data_file.available()); // number of bytes to read from file
   send_at_cmd(F(",100000"), response, 6000);
   if (strstr(response, "DOWNLOAD") == NULL) return false; // fail
 
@@ -500,7 +516,8 @@ void loop() {
       gps_data_file = SD.open(filename, FILE_WRITE);
       if (gps_data_file) {
         Serial.print(F("Writing data to file..."));
-        gps_data_file.println(data);
+        gps_data_file.print(data);
+        gps_data_file.println(F(","));
         
         gps_data_file.close();
         Serial.println(F("Done."));
