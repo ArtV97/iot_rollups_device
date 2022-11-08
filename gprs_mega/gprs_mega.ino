@@ -187,7 +187,7 @@ bool sim800l_ready() {
 bool send_data(File data_file) {
   // open JSON object (with "data" key) to be sent
   //sim800l.println(F("{{\"data\":"));
-  sim800l.print(F("{{\"data\":"));
+  sim800l.print(F("{\"data\":"));
 
   SHA256 sha256;
   sha256.reset(); // clear previous hash information
@@ -199,14 +199,14 @@ bool send_data(File data_file) {
   // calculating data SHA-256 hash
   sha256.update("[", 1);
 
-  while (gps_data_file.available()) {
+  while (data_file.available()) {
     uint8_t i = 0;
 
     do {
-      data[i] = gps_data_file.read();
+      data[i] = data_file.read();
       i++;
-      c = gps_data_file.peek();
-    } while (gps_data_file.available() && c != '\n' && c != '\r');
+      c = data_file.peek();
+    } while (data_file.available() && c != '\n' && c != '\r');
     data[i] = '\0';
 
     Serial.println(data);
@@ -216,9 +216,9 @@ bool send_data(File data_file) {
 
     // consume \n and \r
     do {
-      gps_data_file.read();
-      c = gps_data_file.peek();
-    } while (gps_data_file.available() && (c == '\n' || c == '\r'));
+      data_file.read();
+      c = data_file.peek();
+    } while (data_file.available() && (c == '\n' || c == '\r'));
 
     // add "," if still has data to send
     // if (gps_data_file.available()) {
@@ -298,7 +298,7 @@ bool send_from_file(File data_file) {
   if (strstr(response, "OK") == NULL) return false; // fail
 
   // open bearer
-  send_at_cmd(F("AT+SAPBR=1,1"), response, 15000);
+  send_at_cmd(F("AT+SAPBR=1,1"), response, 20000);
   if (strstr(response, "OK") == NULL) {
     // close bearer
     send_at_cmd(F("AT+SAPBR=0,1"), response, 10000);
@@ -348,7 +348,7 @@ bool send_from_file(File data_file) {
   // Input HTTP data (Sending data size and time limit(ms))
   sim800l.print(F("AT+HTTPDATA="));
   // calculating data (JSON) length
-  int data_length = strlen("{{\"data\":");
+  int data_length = strlen("{\"data\":");
   data_length++; // "["
   data_length = data_length + data_file.available();
   data_length++; // "]"
@@ -356,13 +356,15 @@ bool send_from_file(File data_file) {
   data_length = data_length + strlen(",\"Ed25519\":") + SIGNATURE_SZ;
   data_length = data_length + strlen(",\"public_key\":") + KEY_SZ;
   data_length++; // "}"
+  Serial.print("DATA LENGTH: ");
+  Serial.println(data_length);
   sim800l.print(data_length); // bytes to be sent
   //sim800l.print(data_file.available()); // number of bytes to read from file
   send_at_cmd(F(",100000"), response, 6000);
   if (strstr(response, "DOWNLOAD") == NULL) return false; // fail
 
   // sending data
-  if (!send_data(gps_data_file)) return false; // fail to send data
+  if (!send_data(data_file)) return false; // fail to send data
   
   //gps_data_file.close();
 
@@ -510,14 +512,17 @@ void loop() {
       //sprintf(filename, "%s%c%c.txt", d_str, h_str[0], h_str[1]);
       sprintf(filename, "%s.txt", "data");
 
-      //uint8_t file_exists = SD.exists(filename);
+      uint8_t file_exists = SD.exists(filename);
 
       //gps_data_file = SD.open(filename, O_WRITE | O_CREAT);
       gps_data_file = SD.open(filename, FILE_WRITE);
       if (gps_data_file) {
         Serial.print(F("Writing data to file..."));
+        if (file_exists) {
+          gps_data_file.println(F(","));
+        }
+
         gps_data_file.print(data);
-        gps_data_file.println(F(","));
         
         gps_data_file.close();
         Serial.println(F("Done."));
