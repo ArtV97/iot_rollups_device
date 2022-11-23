@@ -14,6 +14,9 @@
 #define SIGNATURE_SZ 64
 #define CONF_FILE_FIELD_SZ 16
 #define CONF_FILE_VALUE_SZ 128
+#define EARTH_RADIOUS 6371 // Earth's Radious KM
+#define MARINUS 36 // Marinus's standard parallel
+#define CHECKPOINT_DIST_TOLERANCE 0.020 // 0.020 Km == 20 m
 #define sim800l Serial1
 #define SerialGPS Serial2
 
@@ -38,6 +41,12 @@ char port[6] = "";
 TinyGPS GPS;
 
 char bus_id[12] = "";
+uint8_t n_trips = 0;
+uint8_t *trips = NULL;
+uint8_t curr_trip = 0;
+float lat_checkpoint = 0.0;
+float lon_checkpoint = 0.0;
+float lat_checkpoint_rad;
 uint8_t trip_id = 1;
 char data[DATA_SZ+1]; // data to be stored
 
@@ -385,10 +394,32 @@ bool send_from_file(File data_file) {
 }
 
 
+// Equirectangular projection
+void verify_checkpoint(float curr_lat, float curr_lon) {
+  float curr_lat_rad = curr_lat * PI/180;
+
+  float x = (lon_checkpoint - curr_lon) * cos(MARINUS);
+  float y = lat_checkpoint_rad - curr_lat_rad;
+  float d = sqrt(x*x + y*y) * EARTH_RADIOUS;
+
+  // is at or close to the checkpoint, update trip_id...
+  if (d < CHECKPOINT_DIST_TOLERANCE) {
+    if (curr_trip < n_trips - 1) {
+      curr_trip++;
+    } else {
+      curr_trip = 0;
+    }
+  }
+}
+
 void setup() {
   sim800l.begin(9600);
   SerialGPS.begin(9600);
   Serial.begin(9600);
+
+  public_key[0] = 0x0;
+  private_key[0] = 0x0;
+
 
   if (!SD.begin(53)) {
     Serial.println(F("SD card initialization failed!"));
@@ -448,6 +479,26 @@ void setup() {
       hex2bytes(public_key, value);
     } else if (strcmp(field, "private_key") == 0) {
       hex2bytes(private_key, value);
+    } else if (strcmp(field, "n_trips") == 0) {
+      n_trips = atoi(value);
+    } else if (strcmp(field, "trips") == 0) {
+      trips = malloc(sizeof(int)*n_trips);
+
+      char *tk = strtok(value, " ");
+      uint8_t trip_i = 0;
+      while (tk && trip_id < n_trips) {
+        trips[trip_i] = atoi(tk);
+        tk = strtok(NULL, " ");
+        trip_i++;
+      }      
+    } else if (strcmp(field, "trip_checkpoint") == 0) {
+      char *tk = strtok(value, " ");
+      if (!tk) break;
+      lat_checkpoint = atof(tk);
+
+      tk = strtok(NULL, " ");
+      if (!tk) break;
+      lon_checkpoint = atof(tk);
     } else {
       Serial.print(F("Unkown field: \""));
       Serial.print(field);
@@ -457,10 +508,17 @@ void setup() {
 
   conf_file.close();
 
-  if (!strcmp(bus_id,"") || !strcmp(apn,"") || !strcmp(url,"") || !strcmp(port,"")) {
+
+  if (!strcmp(bus_id,"") || !strcmp(apn,"") ||
+      !strcmp(url,"") || !strcmp(port,"") ||
+      public_key[0] == 0x0 || private_key[0] == 0x0 ||
+      n_trips == 0 || !trips ||
+      lat_checkpoint == 0.0 || lon_checkpoint == 0.0) {
     Serial.println(F("Missing values in conf.txt file."));
     while (1);
   }
+
+  lat_checkpoint_rad = lat_checkpoint * PI/180;
 
   Serial.println(F("Setup done."));
 }
@@ -493,6 +551,8 @@ void loop() {
 
       GPS.f_get_position(&lat, &lon);
 
+      verify_checkpoint(lat, lon);
+
       dtostrf(lat, 2, 6, lat_str);
       dtostrf(lon, 2, 6, lon_str);
       dtostrf(GPS.f_speed_kmph(), 3, 2, speed_str);
@@ -504,7 +564,7 @@ void loop() {
       // buid data
       sprintf(data,
         "{\"bus_id\":\"%s\",\"trip_id\":\"%s;%d\",\"ts\":\"%s\",\"lat\":%s,\"lon\":%s,\"speed\":%s}",
-        bus_id, bus_id, trip_id,ts, lat_str, lon_str, speed_str
+        bus_id, bus_id, trips[curr_trip],ts, lat_str, lon_str, speed_str
       );
       Serial.println(data);
       
