@@ -12,6 +12,7 @@ This repository contains the specifications, code and hardware, used by the devi
 
 ## External Libraries
 - [TinyGPS](https://www.arduino.cc/reference/en/libraries/tinygps/)
+- [Crypto](https://www.arduino.cc/reference/en/libraries/crypto/)
 
 ### GY-NEO6MV2
 At the heart of the module is a GPS chip from U-blox – NEO-6M ([Chip Datasheet](https://content.u-blox.com/sites/default/files/products/documents/NEO-6_DataSheet_%28GPS.G6-HW-09005%29.pdf)). The chip measures less than a postage stamp but packs a surprising amount of features into its tiny frame.

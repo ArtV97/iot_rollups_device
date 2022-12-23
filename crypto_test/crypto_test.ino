@@ -10,6 +10,8 @@
 #define HASH_SIZE 32
 #define DATA_SZ 100
 
+const char line_id[] = "18C";
+
 // Ed25519
 const byte privateKey[32] = {
                     0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
@@ -84,12 +86,13 @@ void build_sha256(byte hash_value[HASH_SIZE]) {
     int line_counter = 0;
     int total_bytes = 0;
     if (gps_data_file && gps_data_file.available()) {
-        // consume '{"data":\n\r'
-        //for (uint8_t j = 0; j < 10; j++) gps_data_file.read();
+        // {"line_id":"18C","value":[]
+        char prefix[30];
+        sprintf(prefix, "{\"line_id\":\"%s\",\"value\":[", line_id);
+        Serial.print(prefix);
+        sha256.update(prefix, strlen(prefix));
 
         char c;
-        Serial.print("[");
-        sha256.update("[", 1);
         while (gps_data_file.available()) {
             uint8_t i = 0;
 
@@ -111,14 +114,14 @@ void build_sha256(byte hash_value[HASH_SIZE]) {
                 c = gps_data_file.peek();
             } while (gps_data_file.available() && (c == '\n' || c == '\r'));
 
-            if (gps_data_file.available()) {
-                Serial.println(",");
-                sha256.update(",", 1);
-            }
+            // if (gps_data_file.available()) {
+            //     Serial.println(",");
+            //     sha256.update(",", 1);
+            // }
         }
         gps_data_file.close();
-        Serial.println("]");
-        sha256.update("]", 1);
+        Serial.println("]}");
+        sha256.update("]}", 2);
 
         sha256.finalize(hash_value, HASH_SIZE);
     } else {
